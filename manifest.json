@@ -1,0 +1,21 @@
+{
+  "provides": "ufbx",
+  "sources": [ "src/**" ],
+  "c-sources": [ "csrc/ufbx.c" ],
+  "targets": {
+    "linux-x64": {
+      "link-args": [],
+      "dependencies": [],
+      "linked-libraries": []
+    },
+    "windows-x64": {
+      "wincrt": "static",
+      "link-args": [],
+      "dependencies": [],
+      "linked-libraries": []
+    }
+  },
+  "vendor": {
+    "ufbx-tag": "v0.23.0"
+  }
+}

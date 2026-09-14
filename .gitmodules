@@ -1,0 +1,3 @@
+[submodule "vendor/ufbx"]
+	path = vendor/ufbx
+	url = https://github.com/ufbx/ufbx

@@ -1,0 +1,112 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+    tags: ['v*']
+  pull_request:
+
+permissions:
+  contents: read
+
+env:
+  C3C_VERSION: "0.8.3"
+
+jobs:
+  linux:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Cache c3c
+        uses: actions/cache@v4
+        with:
+          path: ~/tools/c3
+          key: c3c-linux-${{ env.C3C_VERSION }}
+
+      - name: Install c3c
+        run: |
+          if [ ! -x ~/tools/c3/c3c ]; then
+            mkdir -p ~/tools
+            curl -fsSL -o /tmp/c3.tar.gz \
+              "https://github.com/c3lang/c3c/releases/download/v${C3C_VERSION}/c3-linux.tar.gz"
+            tar -xzf /tmp/c3.tar.gz -C ~/tools
+          fi
+          echo "$HOME/tools/c3" >> "$GITHUB_PATH"
+
+      - name: Check generated files
+        run: python3 scripts/gen_bindings.py --check
+
+      - name: Check layouts against the C compiler
+        run: scripts/probe-layout.sh
+
+      - name: Compile the package
+        run: |
+          c3c compile-only --no-obj src/*.c3i src/*.c3
+          rm -rf obj
+
+      - name: Run the smoke test
+        working-directory: test
+        run: c3c test
+
+  windows:
+    runs-on: windows-2022
+    timeout-minutes: 30
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - name: Keep canonical line endings
+        run: git config --global core.autocrlf false
+
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Cache c3c
+        uses: actions/cache@v4
+        with:
+          path: ~/tools/c3
+          key: c3c-windows-${{ env.C3C_VERSION }}
+
+      - name: Install c3c
+        run: |
+          if [ ! -f ~/tools/c3/c3c.exe ]; then
+            mkdir -p ~/tools
+            curl -fsSL -o /tmp/c3.zip \
+              "https://github.com/c3lang/c3c/releases/download/v${C3C_VERSION}/c3-windows.zip"
+            unzip -q /tmp/c3.zip -d ~/tools
+          fi
+          # fetch-sdk stores the MSVC link libraries under AppData; c3c looks beside its own binary.
+          if [ ! -d ~/tools/c3/msvc_sdk ]; then
+            echo Y | ~/tools/c3/c3c.exe fetch-sdk windows
+            cp -r ~/AppData/Local/c3/msvc_sdk ~/tools/c3/msvc_sdk
+          fi
+          cygpath -w "$HOME/tools/c3" >> "$GITHUB_PATH"
+
+      - name: Enter the MSVC environment
+        uses: ilammy/msvc-dev-cmd@v1
+
+      - name: Check layouts against the C compiler
+        run: scripts/probe-layout.sh
+
+      - name: Compile the package
+        run: |
+          c3c compile-only --no-obj src/*.c3i src/*.c3
+          rm -rf obj
+
+      # The checkout writes the symlink as a plain file; a copy of the package stands in for it.
+      - name: Materialize the test dependency
+        run: |
+          rm -rf test/libs/ufbx.c3l
+          mkdir -p test/libs/ufbx.c3l/vendor/ufbx
+          cp manifest.json test/libs/ufbx.c3l/
+          cp -r src csrc test/libs/ufbx.c3l/
+          cp vendor/ufbx/ufbx.h vendor/ufbx/ufbx.c test/libs/ufbx.c3l/vendor/ufbx/
+
+      - name: Run the smoke test
+        working-directory: test
+        run: c3c test

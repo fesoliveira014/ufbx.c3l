@@ -1,0 +1,6 @@
+This package compiles ufbx, by Samuli Raivio, from the git submodule under vendor/ufbx
+(tag v0.23.0). ufbx is available under the MIT License or as public domain (Unlicense);
+the full text is vendor/ufbx/LICENSE. The generator reads upstream's bindgen scripts
+under vendor/ufbx/bindgen, which carry the same license.
+
+The C3 binding itself (src/, csrc/, scripts/, test/) is MIT-licensed; see LICENSE.
