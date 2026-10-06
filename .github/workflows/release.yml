@@ -1,0 +1,92 @@
+name: release
+
+on:
+  push:
+    tags: ['v*']
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  C3C_VERSION: "0.8.3"
+  PROVIDES: "ufbx"
+
+jobs:
+  package:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Cache c3c
+        uses: actions/cache@v4
+        with:
+          path: ~/tools/c3
+          key: c3c-linux-${{ env.C3C_VERSION }}
+
+      - name: Install c3c
+        run: |
+          if [ ! -x ~/tools/c3/c3c ]; then
+            mkdir -p ~/tools
+            curl -fsSL -o /tmp/c3.tar.gz \
+              "https://github.com/c3lang/c3c/releases/download/v${C3C_VERSION}/c3-linux.tar.gz"
+            tar -xzf /tmp/c3.tar.gz -C ~/tools
+          fi
+          echo "$HOME/tools/c3" >> "$GITHUB_PATH"
+
+      - name: Resolve version
+        run: |
+          if [ "$GITHUB_REF_TYPE" = tag ]; then
+            echo "TAG=$GITHUB_REF_NAME" >> "$GITHUB_ENV"
+          else
+            echo "TAG=v0.0.0-dev" >> "$GITHUB_ENV"
+          fi
+
+      - name: Pack
+        run: |
+          set -euo pipefail
+          stage="$RUNNER_TEMP/stage"
+          rm -rf "$stage" dist
+          mkdir -p "$stage" dist
+          cp manifest.json LICENSE README.md NOTICE "$stage/"
+          cp -r src "$stage/src"
+          mkdir -p "$stage/csrc" "$stage/vendor/ufbx"
+          cp csrc/ufbx.c "$stage/csrc/"
+          cp vendor/ufbx/ufbx.c vendor/ufbx/ufbx.h vendor/ufbx/LICENSE "$stage/vendor/ufbx/"
+          artifact="$PWD/dist/${PROVIDES}-${TAG}.c3l"
+          (cd "$stage" && find . -type f | sed 's|^\./||' | LC_ALL=C sort | zip -X -q "$artifact" -@)
+          (cd dist && sha256sum "$(basename "$artifact")" > SHA256SUMS)
+          cat dist/SHA256SUMS
+
+      - name: Smoke test the artifact
+        run: |
+          set -euo pipefail
+          rm -rf "$RUNNER_TEMP/smoke"
+          mkdir "$RUNNER_TEMP/smoke"
+          unzip -q "dist/${PROVIDES}-${TAG}.c3l" -d "$RUNNER_TEMP/smoke"
+          cd "$RUNNER_TEMP/smoke"
+          test -f manifest.json
+          unzip -Z1 "$GITHUB_WORKSPACE/dist/${PROVIDES}-${TAG}.c3l"
+          for source in csrc/*.c; do cc -c -o /dev/null "$source"; done
+          c3c compile-only --no-obj $(find src -name '*.c3' -o -name '*.c3i' | sort)
+
+      - name: Upload artifacts
+        if: github.event_name != 'push'
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-artifacts
+          path: dist/*
+          if-no-files-found: error
+
+      - name: Publish release
+        if: github.event_name == 'push'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "$GITHUB_REF_NAME" dist/* --generate-notes
