@@ -10,7 +10,7 @@ permissions:
   contents: read
 
 env:
-  C3C_VERSION: "0.8.3"
+  C3C_VERSION: "0.8.5_1"
 
 jobs:
   linux:
